@@ -1,0 +1,36 @@
+pipeline_settings:
+  chunk_size: 10000
+  logging_level: "INFO"
+  console_log: True
+  fun_mode: True
+  start_date: 2016-01-01
+  end_date: 2017-01-01
+
+destination:
+  dataset_id: "raw_olist"
+
+sources:
+  - file_path: "olist_customers_dataset.csv"
+    table_name: "customers"
+    date_col: null
+  - file_path: "olist_geolocation_dataset.csv"
+    table_name: "geolocation"
+    date_col: null
+  - file_path: "olist_order_items_dataset.csv"
+    table_name: "order_items"
+    date_col: null
+  - file_path: "olist_order_payments_dataset.csv"
+    table_name: "order_payments"
+    date_col: null
+  - file_path: "olist_order_reviews_dataset.csv"
+    table_name: "order_reviews"
+    date_col: "review_creation_date"
+  - file_path: "olist_orders_dataset.csv"
+    table_name: "orders"
+    date_col: "order_purchase_timestamp"
+  - file_path: "olist_products_dataset.csv"
+    table_name: "products"
+    date_col: null
+  - file_path: "olist_sellers_dataset.csv"
+    table_name: "sellers"
+    date_col: null
