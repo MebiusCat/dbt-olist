@@ -1,64 +1,79 @@
 # Olist E-Commerce Ingestion Pipeline
 
-An incremental data pipeline (ELT) that extracts e-commerce data from flat files, applies time-based filtering, and loads it into Google BigQuery for downstream transformations with dbt.
+A config-driven batch data ingestion pipeline designed to extract e-commerce data from local CSV files and load it into Google BigQuery. This repository acts as the **RAW** layer provider in an ELT (Extract-Load-Transform) architecture. All subsequent data cleansing, type casting, and analytical modeling are decoupled and handled inside BigQuery using **dbt**.
 
 ## Tech Stack
+[![Python 3.12](https://shields.io)](https://python.org)
+[![Pandas](https://shields.io)](https://pydata.org)
+[![Google BigQuery](https://shields.io)](https://google.com)
+[![dbt](https://shields.io)](https://getdbt.com)
+[![Loguru](https://shields.io)](https://github.com)
 
-![Python](https://shields.io)
-![Pandas](https://shields.io)
-![Google BigQuery](https://shields.io)
-![dbt](https://shields.io)
-
----
-
-### ◈ Approach & Core Concept
-The pipeline uses an **Append-Only / Incremental Ingestion** pattern instead of full-refresh loads. Data is filtered by a configurable date window during the extraction phase and appended to BigQuery. This keeps historical records intact in the raw layer, offloading all heavy transformations and analytical modeling to dbt.
 
 ---
 
-### ◈ Engineering Decisions & Implementation Details
+### Core Engineering Decisions
 
-* **Memory Optimization (`yield` generators)**: To prevent Out-Of-Memory (OOM) issues on larger CSVs, data is streamed and loaded into BigQuery in configurable chunks (`chunk_size`). This keeps RAM usage flat and stable.
-* **Config-Driven Architecture**: Table metadata (file paths, target names, date columns) and pipeline parameters are fully separated into `config.yaml`. The Python script parses this file into strongly-typed **Dataclasses**. Onboarding a new dataset requires zero code changes.
-* **Dynamic Table Partitioning**: The `BigQueryConnector` checks table metadata on the fly. Transactional data (like `orders`) is automatically provisioned with daily time-partitioning in BigQuery to minimize future query costs, while static lookups are loaded normally.
-* **Fail-Fast Credential Check**: Upon initialization, the pipeline immediately runs a lightweight API call (`list_datasets`). If GCP service account keys are expired or invalid, the execution stops before processing any source files.
-* **Separated Logs and Alerts**: Technical tracking and stack traces are captured locally via `loguru`. High-level milestones (Pipeline Success / Critical Failures) are sent asynchronously to a Discord channel for operational alerting.
+* **Memory Optimization (Streaming Architecture)**: To prevent Out-Of-Memory (OOM) crashes on larger datasets, files are processed sequentially in blocks using `pd.read_csv(chunksize=...)`. This ensures a flat and predictable RAM footprint regardless of the source file size.
+* **On-the-Fly Filtering**: Time-window filters (`start_date` / `end_date`) are evaluated inside a lazy generator for each batch. An explicit `.copy()` call is enforced after filtering to eliminate Pandas `SettingWithCopyWarning` when appending metadata.
+* **Separation of Concerns (Low Coupling)**: The `BigQueryConnector` is completely stateless and isolated. It has no knowledge of pipeline orchestration or logging wrappers. Its sole responsibility is to stream a DataFrame into BigQuery and provision native daily time-partitioning if a partition field is specified in the configuration.
+* **Idempotency & Load Strategies**: The pipeline runs `WRITE_APPEND` for transactional tables with dates. For static dictionaries or lookup tables without date fields, it applies a `WRITE_TRUNCATE` strategy on the very first batch and appends the rest. This allows safely re-running the pipeline without data duplication.
+* **Audit Columns**: Every processed row is enriched with a `_loaded_at` UTC timestamp. This serves as a vital audit field for downstream dbt data freshness checks and incremental model rebuilds.
+
+---
+
+### Logging & Monitoring (`PipelineLogger`)
+
+All tracking logic is encapsulated in a dedicated wrapper over `loguru`, routing logs into distinct operational streams:
+* **Console Output**: Set to `INFO` level to block internal Google SDK API noise. Target table names are dynamically padded and aligned into a clean vertical column using contextual `.bind()`.
+* **Log File**: Captures a deep `DEBUG` trace (including module names, exact functions, and line numbers) for incident post-mortems. Automated file rotation is triggered once a file reaches 10 MB.
+* **Discord Alerts**: Upon pipeline initialization, success, or unhandled exceptions, the logger automatically pushes a structured card with technical tracebacks to a Discord channel via webhooks.
+* **Personalized Touch (Fun Mode)**: When enabled, the initialization phase selects a single random Kaomoji text assistant (e.g., `☂[o_o]` or `(⌐■_■)`) from a curated list, giving the terminal interface a clean yet unique style without adding log spam.
 
 ---
 
 ### 📁 Project Structure
 ```
-my_project/
+dbt-olist/
 ├── dbt_project/          # dbt models, macros, and schema tests
-├── src/                  # Python source code
-│   ├── connectors/│   
-│   └── bq.py             # BigQueryConnector (Authentication & batch ingestion)
+├── src/                  # Python pipeline source code
+│   ├── connectors/
+│   │   └── bq.py         # BigQueryConnector (Stateless DataFrame upload)
 │   ├── pipelines/
-│   │   └── olist.py      # Pipeline execution and date-filtering logic
+│   │   └── olist.py      # Pipeline orchestrator & lazy batch data generator
 │   ├── utils/
-│   │   ├── alerts.py     # Discord notifications
-│   │   └── logger.py     # Loguru configuration
-│   └── main.py           # Entry point and config parsing
-├── config.yaml           # Metadata catalog for all 9 Olist tables
+│   │   └── logger.py     # PipelineLogger (Loguru config, Discord alerts & context)
+│   ├── config.py         # Strongly-typed AppConfig schema (Dataclasses)
+│   └── main.py           # Execution entry point (Initializes config, logs, and runs pipeline)
+├── config.yaml           # Metadata catalog and settings for all Olist source files
 ├── .env.example          # Environment variables template
 └── README.md
 ```
----
-
 
 ---
 
 ### ⚙ How to Run
 
-#### 1. Environment Variables
-Create a local `.env` file based on `.env.example`:
+#### 1. Environment Setup
+Create a local `.env` file in the project root matching the template:
 ```env
 GOOGLE_CLOUD_PROJECT_ID=your-gcp-project-id
 GOOGLE_APPLICATION_CREDENTIALS=path/to/your/gcp-key.json
 DISCORD_WEBHOOK_URL=https://discord.com...
 ```
 
-#### 2. Execution
+#### 2. Configuration Settings (`config.yaml`)
+Control runtime parameters and output routing dynamically without modifying Python files:
+```yaml
+pipeline_settings:
+  chunk_size: 50000
+  logging_level: "DEBUG"
+  log_to_console: true
+  log_to_file: true
+  fun_mode: true
+```
+
+#### 3. Execution
 ```bash
 pip install -r requirements.txt
 python -m src.main
@@ -67,6 +82,7 @@ python -m src.main
 ---
 
 ## ◈ Next Steps (dbt Analytics Layer)
-Once the raw layer (`olist_raw`) is populated, the dbt project takes over to:
-* Cleanse, cast, and deduplicate incremental batches (Staging layer).
-* Structure data into Star/Snowflake schemas (Marts layer) for analytical reporting.
+Once the `raw_olist` dataset is successfully populated by this pipeline, the dbt engine takes control to:
+* Cleanse, cast data types, and deduplicate historical load records (Staging layer).
+* Execute automated data quality checks via native schema tests.
+* Materialize dimensional star/snowflake schemas (Marts layer) optimized for BI reporting.
