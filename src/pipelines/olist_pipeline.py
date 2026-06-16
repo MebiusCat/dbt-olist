@@ -1,6 +1,8 @@
 import pandas as pd
 from connectors import BigQueryConnector
-from utils import logger
+from config import AppConfig
+from pathlib import Path
+from utils import PipelineLogger
 
 def batch_data_extractor(
         file_path: str, 
@@ -10,50 +12,55 @@ def batch_data_extractor(
         chunk_size: int
 ):
 
-    df = pd.read_csv(file_path)
+    with pd.read_csv(file_path, chunksize=chunk_size) as data:
+        for batch in data:
+            if date_col:
+                batch[date_col] = pd.to_datetime(batch[date_col])
 
-    if date_col:
-        df[date_col] = pd.to_datetime(df[date_col])
-        df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
-        logger.info(f"Applied filter by date [{date_col}]. Rows remains: {len(df)}")
-    else:
-        logger.info(f"Upload table without filtration")
+                start_date = pd.to_datetime(start_dt)
+                end_date = pd.to_datetime(end_dt)
 
-    if df.empty:
-        return
+                batch = batch[(batch[date_col] >= start_date) & (batch[date_col] < end_date)].copy()
+                if batch.empty:
+                    continue
+
+            batch.loc[:, "_loaded_at"] = pd.Timestamp.now(tz="UTC")
+
+            yield batch
     
-    total_rows = len(df)
-    for i in range(0, total_rows, chunk_size):
-        chunk = df.iloc[i: i + chunk_size]
-        yield chunk
+def run_olist(config: AppConfig, log: PipelineLogger):
+    start_dt = config.pipeline_settings.start_date
+    end_dt = config.pipeline_settings.end_date
+    chunk_size = config.pipeline_settings.chunk_size
 
+    try:
+        bq = BigQueryConnector(config)
+        log.connection()
+    except Exception as e:
+        log.config_error()
+        log.alert_discord("error", "Pipeline failed at initialization stage", details=str(e))
+        return
 
-def run_olist(config: dict):
-    start_dt = config["pipeline_settings"]["start_date"]
-    end_dt = config["pipeline_settings"]["end_date"]
-    chunk_size = config["pipeline_settings"]["chunk_size"]
+    for table_cfg in config.sources:
+        table_name = table_cfg.table_name
+        file_path = table_cfg.file_path
+        date_col = table_cfg.date_col
 
-    bq = BigQueryConnector()
-
-    for table_cfg in config["sources"]:
-        table_name = table_cfg["table_name"]
-        file_path = table_cfg["file_path"]
-        date_col = table_cfg["date_col"]
-
-        logger.info(f"Start loading table: {table_name}")
+        log.init_table(table_name, chunk_size)
+        base_path = Path(config.pipeline_settings.raw_data_dir)
 
         try:
             batches = batch_data_extractor(
-                file_path=file_path,
+                file_path=base_path / file_path,
                 date_col=date_col,
                 start_dt=start_dt,
                 end_dt=end_dt, 
                 chunk_size=chunk_size,
             )
 
-            for batch_num, chunk in enumerate(batches, start=1):
-                logger.debug(f"Loading batch #{batch_num} for table {table_name}...")
-
+            batch_num = 0
+            for chunk in batches:
+                batch_num += 1
                 if not date_col and batch_num == 1:
                     write_disposition = "WRITE_TRUNCATE"
                 else:
@@ -61,15 +68,31 @@ def run_olist(config: dict):
 
                 bq.load_dataframe(
                     dataframe=chunk,
-                    dataset_id=config["destination"]["dataset_id"],
+                    dataset_id=config.pipeline_settings.dataset_id,
                     table_id=table_name,
                     partition_column=date_col,
                     write_disposition=write_disposition,
+                    is_first_batch=(batch_num == 1),
                 )
-            logger.info(f"Table {table_name} fully downloaded.\n")
+                log.log_batch(
+                    table_name=table_name,
+                    batch_num=batch_num,
+                    rows_loaded=len(chunk)
+                )
+            
+            if batch_num == 0:
+                log.logger.warning("No data matched the date filters. Nothing was uploaded.")
+            log.complete_table(table_name=table_name)
+
         except Exception as e:
-            logger.error(f"Upload was failed for table {table_name}: {e} ")
+            log.table_error(table_name=table_name, e=e)
+            log.alert_discord(
+                status="error",
+                message=f"Critical error during BigQuery payload upload for table: {table_name}", 
+                details=str(e)
+            )
+            log.pipeline_crash()
+
             raise e
-
-
-
+        
+    log.alert_discord("success", "All tables successfully loaded into BigQuery!")
