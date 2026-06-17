@@ -95,4 +95,3 @@ def run_olist(config: AppConfig, log: PipelineLogger):
 
             raise e
         
-    log.alert_discord("success", "All tables successfully loaded into BigQuery!")

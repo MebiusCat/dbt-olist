@@ -4,48 +4,10 @@ import time
 import urllib.request
 from loguru import logger
 from config import AppConfig
+from . import creatures
 
 
 class PipelineLogger:
-    _START_CREATURES = [
-        "☂[o_o]",        # My favorite umbrella deflector
-        "««(o_o)»»",     # Scanning system
-        "(⌐■_■)",        # Cool architect
-        "ヘ( ^o^ )ノ",    # Successful launch
-        "└[o_o]┘",       # Combat loader droid
-        "⊂(▀¯▀_ )",      # Sentinel security agent
-        "(⚆_⚆)",         # Scanning terabytes... no violations found
-        "╚(•⌂•)╝",       # Shields CRITICAL! But we are READYY TO RUMBLE!
-        "＼| ￣–￣ |／",  # Ancient giant robot-guardian awakened to protect data
-        "ᕦ(ò_ó)ᕤ",      # Powerful defender, systems at maximum capacity
-        "(⊙_☉)",         # Wow, look at the number of rows in this batch!
-        "ᕙ(^▿^-)ᕗ",     # Space pilot ready for liftoff
-        "(o_o)7",        # Aye-aye, captain! Execution started
-        "(o_o)ﾉ"         # Haha, bye! Let's see if you survive the debug #Ahaha, smell ya later, chumps! Good luck out there
-    ]
-
-    _PHRASES = {
-        "start": {
-            True: "««(o_o)»» Blackbox activated. Scanning space...",
-            False: "Pipeline initialized. Monitoring system state..."
-        },
-         "connecting": {
-            True: "(⌐■_■) Connecting to BigQuery. Initiating data beam...",
-            False: "Establishing connection to Google BigQuery storage..."
-        },
-        "success": {
-            True: "ヘ( ^o^ )ノ * . * . Mission accomplished! Data delivered.",
-            False: "Pipeline finished successfully. Data transfer completed."
-        },
-        "config_error": {
-            True: "╚(•⌂•)╝ Shields CRITICAL! Bad config.",
-            False: "Initialization failed: Configuration file error."
-        },
-        "crash": {
-            True: "＼(〇_ｏ)／ Deflector shields offline! Systems failing.",
-            False: "Critical error during BigQuery payload upload pipeline."
-        },
-    }
 
     _DISCORD_TITLES = {
         "success": {
@@ -67,7 +29,6 @@ class PipelineLogger:
         self._timers = {}
 
         logger.configure(extra={"table": ""})
-
         logger.remove()
 
         if settings.log_to_console:
@@ -98,19 +59,23 @@ class PipelineLogger:
         self.logger = logger.bind(table="")    
 
     def pipeline_start(self) -> None:
-        self.logger.info(self._PHRASES["start"][self.fun_mode])
+        self.logger.info(
+            creatures.get_log_format("start", self.fun_mode)
+        )
     
     def connection(self) -> None:
-        self.logger.info(self._PHRASES["connecting"][self.fun_mode])
+        self.logger.info("Establishing connection to Google BigQuery storage...")
 
     def pipeline_success(self) -> None:
-        self.logger.info(self._PHRASES["success"][self.fun_mode])
+        self.logger.info(
+            creatures.get_log_format("success", self.fun_mode)
+        )
     
     def config_error(self) -> None:
-        self.logger.error(self._PHRASES["config_error"][self.fun_mode])
+        self.logger.error("Initialization failed: Configuration file error.")
     
     def pipeline_crash(self) -> None:
-        self.logger.error(self._PHRASES["crash"][self.fun_mode])
+        self.logger.error("Critical error during BigQuery payload upload pipeline.")
 
     def init_table(self, table_name: str, chunk_size: int) -> None:
         self._timers[table_name] = {
@@ -142,7 +107,7 @@ class PipelineLogger:
             total_rows = timer_data["total_rows_loaded"]
 
             self.logger.info(
-                f"Table fully downloaded."
+                f"Table fully downloaded. "
                 f"Total rows: {total_rows} | Time elapsed: {cur_loop:.2f}s"
             )
         self.logger = logger.bind(table="")
