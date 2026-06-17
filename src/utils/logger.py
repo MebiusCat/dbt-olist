@@ -7,6 +7,23 @@ from config import AppConfig
 
 
 class PipelineLogger:
+    _START_CREATURES = [
+        "☂[o_o]",        # My favorite umbrella deflector
+        "««(o_o)»»",     # Scanning system
+        "(⌐■_■)",        # Cool architect
+        "ヘ( ^o^ )ノ",    # Successful launch
+        "└[o_o]┘",       # Combat loader droid
+        "⊂(▀¯▀_ )",      # Sentinel security agent
+        "(⚆_⚆)",         # Scanning terabytes... no violations found
+        "╚(•⌂•)╝",       # Shields CRITICAL! But we are READYY TO RUMBLE!
+        "＼| ￣–￣ |／",  # Ancient giant robot-guardian awakened to protect data
+        "ᕦ(ò_ó)ᕤ",      # Powerful defender, systems at maximum capacity
+        "(⊙_☉)",         # Wow, look at the number of rows in this batch!
+        "ᕙ(^▿^-)ᕗ",     # Space pilot ready for liftoff
+        "(o_o)7",        # Aye-aye, captain! Execution started
+        "(o_o)ﾉ"         # Haha, bye! Let's see if you survive the debug #Ahaha, smell ya later, chumps! Good luck out there
+    ]
+
     _PHRASES = {
         "start": {
             True: "««(o_o)»» Blackbox activated. Scanning space...",

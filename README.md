@@ -3,11 +3,12 @@
 A config-driven batch data ingestion pipeline designed to extract e-commerce data from local CSV files and load it into Google BigQuery. This repository acts as the **RAW** layer provider in an ELT (Extract-Load-Transform) architecture. All subsequent data cleansing, type casting, and analytical modeling are decoupled and handled inside BigQuery using **dbt**.
 
 ## Tech Stack
-[![Python 3.12](https://shields.io)](https://python.org)
-[![Pandas](https://shields.io)](https://pydata.org)
-[![Google BigQuery](https://shields.io)](https://google.com)
-[![dbt](https://shields.io)](https://getdbt.com)
-[![Loguru](https://shields.io)](https://github.com)
+* **Language**: Python 3.12+
+* **Data Processing**: Pandas (stream-like processing via generators)
+* **DWH**: Google BigQuery
+* **Data Transformation**: dbt (Data Build Tool)
+* **Logging & Monitoring**: Loguru, Discord Webhooks (Operational alerting)
+* **Configuration**: YAML
 
 
 ---
